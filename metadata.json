@@ -1,0 +1,5 @@
+{
+  "name": "GD Level Maker",
+  "description": "A mobile-friendly Geometry Dash level layout and export tool.",
+  "requestFramePermissions": []
+}
