@@ -578,7 +578,11 @@ export default function App() {
                 newTemplates.push({ id: t.id, url: t.dataUrl, imageElement: img, defaultW, defaultH });
                 loadedCount++;
                 if (loadedCount === data.properties.customTemplates.length) {
-                  setTemplates(newTemplates);
+                  setTemplates(prev => {
+                    const presets = prev.filter(p => p.isPreset);
+                    const filteredNew = newTemplates.filter(nt => !presets.some(p => p.id === nt.id));
+                    return [...presets, ...filteredNew];
+                  });
                   data.objects.forEach((o: any) => {
                     const template = newTemplates.find(temp => temp.id === (o.templateId || String(o.id)));
                     const w = o.w || (template ? template.defaultW : 1);
@@ -639,7 +643,11 @@ export default function App() {
                 newTemplates.push({ id: String(id), url: dataUrl, imageElement: img, defaultW: 1, defaultH: 1 });
                 loadedCount++;
                 if (loadedCount === uniqueIds.length) {
-                  setTemplates(newTemplates);
+                  setTemplates(prev => {
+                    const presets = prev.filter(p => p.isPreset);
+                    const filteredNew = newTemplates.filter(nt => !presets.some(p => p.id === nt.id));
+                    return [...presets, ...filteredNew];
+                  });
                   data.objects.forEach((o: any) => {
                     const w = o.w || 1;
                     const h = o.h || 1;
@@ -1040,16 +1048,16 @@ export default function App() {
         </div>
       )}
       {replaceTemplateId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setReplaceTemplateId(null)}>
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl w-full max-w-md flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setReplaceTemplateId(null)}>
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 shrink-0">
               <h2 className="text-xl font-bold text-zinc-100">Replace All</h2>
               <button onClick={() => setReplaceTemplateId(null)} className="p-1 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-100"><X size={20} /></button>
             </div>
-            <p className="text-zinc-400 text-sm mb-4">Choose how you want to replace all instances of this object.</p>
+            <p className="text-zinc-400 text-sm mb-4 shrink-0">Choose how you want to replace all instances of this object.</p>
             
-            <div className="flex flex-col gap-3">
-              <label className="flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 cursor-pointer rounded-xl transition-colors font-semibold">
+            <div className="flex flex-col gap-3 overflow-hidden flex-1">
+              <label className="flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 cursor-pointer rounded-xl transition-colors font-semibold shrink-0">
                 <Upload size={18} />
                 Upload New Image
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => {
@@ -1058,13 +1066,13 @@ export default function App() {
                 }} />
               </label>
 
-              <div className="relative flex items-center py-2">
+              <div className="relative flex items-center py-2 shrink-0">
                 <div className="flex-grow border-t border-zinc-800"></div>
                 <span className="flex-shrink-0 mx-4 text-zinc-500 text-xs uppercase font-bold tracking-wider">Or select existing</span>
                 <div className="flex-grow border-t border-zinc-800"></div>
               </div>
 
-              <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto p-1">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 overflow-y-auto p-2 min-h-0">
                 {templates.filter(t => t.id !== replaceTemplateId).map(t => (
                   <button
                     key={t.id}
@@ -1078,7 +1086,7 @@ export default function App() {
                   </button>
                 ))}
                 {templates.filter(t => t.id !== replaceTemplateId).length === 0 && (
-                  <div className="col-span-4 text-center py-4 text-zinc-500 text-sm">No other templates available</div>
+                  <div className="col-span-full text-center py-4 text-zinc-500 text-sm">No other templates available</div>
                 )}
               </div>
             </div>
