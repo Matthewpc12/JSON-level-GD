@@ -15,6 +15,7 @@ interface BlockTemplate {
   defaultH: number;
   name?: string;
   isPreset?: boolean;
+  isHidden?: boolean;
 }
 
 interface PlacedObject {
@@ -640,7 +641,7 @@ export default function App() {
               const img = new Image();
               img.src = dataUrl;
               img.onload = () => {
-                newTemplates.push({ id: String(id), url: dataUrl, imageElement: img, defaultW: 1, defaultH: 1 });
+                newTemplates.push({ id: `imported_${id}`, url: dataUrl, imageElement: img, defaultW: 1, defaultH: 1, isHidden: true });
                 loadedCount++;
                 if (loadedCount === uniqueIds.length) {
                   setTemplates(prev => {
@@ -659,7 +660,7 @@ export default function App() {
 
                     newObjects.push({
                       id: Math.random().toString(),
-                      templateId: String(o.id),
+                      templateId: `imported_${o.id}`,
                       x,
                       y,
                       w,
@@ -759,11 +760,12 @@ export default function App() {
     setExportProgress(0);
 
     try {
-      const maxGridX = Math.max(...placedObjects.map(o => o.x + o.w), EXPORT_SECTION_WIDTH);
+      const SVG_SECTION_WIDTH = 12;
+      const maxGridX = Math.max(...placedObjects.map(o => o.x + o.w), SVG_SECTION_WIDTH);
       const width = maxGridX * CELL_SIZE;
-      const height = GRID_HEIGHT * CELL_SIZE;
 
-      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">\n`;
+      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} 360" width="${width}" height="360">\n`;
+      svgContent += `  <g transform="translate(${width / 2}, 180)">\n`;
       
       for (let i = 0; i < placedObjects.length; i++) {
         const obj = placedObjects[i];
@@ -776,9 +778,14 @@ export default function App() {
           ctx?.drawImage(template.imageElement, 0, 0);
           const dataUrl = canvas.toDataURL('image/png');
           
-          const centerX = obj.x * CELL_SIZE + (obj.w * CELL_SIZE) / 2;
-          const centerY = obj.y * CELL_SIZE + (obj.h * CELL_SIZE) / 2;
-          svgContent += `  <image href="${dataUrl}" x="${obj.x * CELL_SIZE}" y="${obj.y * CELL_SIZE}" width="${obj.w * CELL_SIZE}" height="${obj.h * CELL_SIZE}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
+          const drawX = obj.x * CELL_SIZE - (width / 2);
+          const drawY = obj.y * CELL_SIZE - 500;
+          const drawW = obj.w * CELL_SIZE;
+          const drawH = obj.h * CELL_SIZE;
+          
+          const centerX = drawX + drawW / 2;
+          const centerY = drawY + drawH / 2;
+          svgContent += `    <image href="${dataUrl}" x="${drawX}" y="${drawY}" width="${drawW}" height="${drawH}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
         }
 
         if (i % 50 === 0) {
@@ -787,7 +794,7 @@ export default function App() {
         }
       }
 
-      svgContent += `</svg>`;
+      svgContent += `  </g>\n</svg>`;
 
       const blob = new Blob([svgContent], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
@@ -812,43 +819,44 @@ export default function App() {
     setExportProgress(0);
 
     try {
-      const maxGridX = Math.max(...placedObjects.map(o => o.x + o.w), EXPORT_SECTION_WIDTH);
-      const numSections = Math.ceil(maxGridX / EXPORT_SECTION_WIDTH);
+      const SVG_SECTION_WIDTH = 12; // 12 * 40 = 480
+      const maxGridX = Math.max(...placedObjects.map(o => o.x + o.w), SVG_SECTION_WIDTH);
+      const numSections = Math.ceil(maxGridX / SVG_SECTION_WIDTH);
       const zip = new JSZip();
 
       for (let i = 0; i < numSections; i++) {
-        const startX = i * EXPORT_SECTION_WIDTH;
-        const endX = startX + EXPORT_SECTION_WIDTH;
-        const width = EXPORT_SECTION_WIDTH * CELL_SIZE;
-        const height = GRID_HEIGHT * CELL_SIZE;
+        const startX = i * SVG_SECTION_WIDTH;
+        const endX = startX + SVG_SECTION_WIDTH;
+        const width = SVG_SECTION_WIDTH * CELL_SIZE; // 480
 
-        let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">\n`;
+        const sectionObjects = placedObjects.filter(obj => obj.x < endX && obj.x + obj.w > startX);
         
-        placedObjects.forEach(obj => {
-          if (obj.x < endX && obj.x + obj.w > startX) {
-            const template = templates.find(t => t.id === obj.templateId);
-            if (template) {
-              const canvas = document.createElement('canvas');
-              canvas.width = template.imageElement.width;
-              canvas.height = template.imageElement.height;
-              const ctx = canvas.getContext('2d');
-              ctx?.drawImage(template.imageElement, 0, 0);
-              const dataUrl = canvas.toDataURL('image/png');
-              
-              const drawX = (obj.x - startX) * CELL_SIZE;
-              const drawY = obj.y * CELL_SIZE;
-              const drawW = obj.w * CELL_SIZE;
-              const drawH = obj.h * CELL_SIZE;
-              
-              const centerX = drawX + drawW / 2;
-              const centerY = drawY + drawH / 2;
-              
-              svgContent += `  <image href="${dataUrl}" x="${drawX}" y="${drawY}" width="${drawW}" height="${drawH}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
-            }
+        let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">\n`;
+        svgContent += `  <g transform="translate(240, 180)">\n`;
+        
+        sectionObjects.forEach(obj => {
+          const template = templates.find(t => t.id === obj.templateId);
+          if (template) {
+            const canvas = document.createElement('canvas');
+            canvas.width = template.imageElement.width;
+            canvas.height = template.imageElement.height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(template.imageElement, 0, 0);
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            const drawX = (obj.x - startX) * CELL_SIZE - 240;
+            const drawY = obj.y * CELL_SIZE - 500;
+            const drawW = obj.w * CELL_SIZE;
+            const drawH = obj.h * CELL_SIZE;
+            
+            const centerX = drawX + drawW / 2;
+            const centerY = drawY + drawH / 2;
+            
+            svgContent += `    <image href="${dataUrl}" x="${drawX}" y="${drawY}" width="${drawW}" height="${drawH}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
           }
         });
 
-        svgContent += `</svg>`;
+        svgContent += `  </g>\n</svg>`;
         zip.file(`section_${i + 1}.svg`, svgContent);
         
         setExportProgress(((i + 1) / numSections) * 50);
@@ -1073,7 +1081,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 overflow-y-auto p-2 min-h-0">
-                {templates.filter(t => t.id !== replaceTemplateId).map(t => (
+                {templates.filter(t => t.id !== replaceTemplateId && !t.isHidden).map(t => (
                   <button
                     key={t.id}
                     onClick={() => {
@@ -1085,7 +1093,7 @@ export default function App() {
                     <img src={t.url} alt="Template" className="max-w-full max-h-full object-contain" />
                   </button>
                 ))}
-                {templates.filter(t => t.id !== replaceTemplateId).length === 0 && (
+                {templates.filter(t => t.id !== replaceTemplateId && !t.isHidden).length === 0 && (
                   <div className="col-span-full text-center py-4 text-zinc-500 text-sm">No other templates available</div>
                 )}
               </div>
@@ -1256,11 +1264,11 @@ export default function App() {
                   </div>
                 </div>
 
-                {templates.filter(t => !t.isPreset).length > 0 && (
+                {templates.filter(t => !t.isPreset && !t.isHidden).length > 0 && (
                   <div className="flex flex-col gap-2">
                     <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">My Blocks</h3>
                     <div className="grid grid-cols-5 md:grid-cols-4 gap-2 content-start">
-                      {templates.filter(t => !t.isPreset).map(t => (
+                      {templates.filter(t => !t.isPreset && !t.isHidden).map(t => (
                         <button
                           key={t.id}
                           onClick={() => { setSelectedTemplateId(t.id); setSelectedObjectIds([]); }}
@@ -1274,11 +1282,11 @@ export default function App() {
                   </div>
                 )}
 
-                {templates.filter(t => t.isPreset).length > 0 && (
+                {templates.filter(t => t.isPreset && !t.isHidden).length > 0 && (
                   <div className="flex flex-col gap-2">
                     <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Presets</h3>
                     <div className="grid grid-cols-5 md:grid-cols-4 gap-2 content-start">
-                      {templates.filter(t => t.isPreset).map(t => (
+                      {templates.filter(t => t.isPreset && !t.isHidden).map(t => (
                         <button
                           key={t.id}
                           onClick={() => { setSelectedTemplateId(t.id); setSelectedObjectIds([]); }}
