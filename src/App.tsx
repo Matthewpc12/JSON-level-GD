@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Download, Trash2, Plus, Minus, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, X, MousePointer2, FileJson, Image as ImageIcon, RotateCcw, RotateCw, RefreshCw, FlipHorizontal, FlipVertical, FileArchive, CheckSquare, Library, Undo2, Redo2, Brush, AlertTriangle, ArrowUpToLine, ArrowDownToLine, ChevronUp, ChevronDown } from 'lucide-react';
+import { Upload, Download, Trash2, Plus, Minus, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, X, MousePointer2, FileJson, Image as ImageIcon, RotateCcw, RotateCw, RefreshCw, FlipHorizontal, FlipVertical, FileArchive, CheckSquare, Library, Undo2, Redo2, Brush, Hand, AlertTriangle, ArrowUpToLine, ArrowDownToLine, ChevronUp, ChevronDown } from 'lucide-react';
 import JSZip from 'jszip';
 import { createClient } from '@supabase/supabase-js';
 
@@ -63,6 +63,7 @@ export default function App() {
   const [replaceTemplateId, setReplaceTemplateId] = useState<string | null>(null);
 
   const [isDragBuildMode, setIsDragBuildMode] = useState(false);
+  const [isPanMode, setIsPanMode] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
   const [lastBuiltPos, setLastBuiltPos] = useState<{ x: number, y: number } | null>(null);
 
@@ -86,7 +87,9 @@ export default function App() {
   } | null>(null);
 
   const [hasWarnedMassResize, setHasWarnedMassResize] = useState(false);
-  const [activeTab, setActiveTab] = useState<'build' | 'color'>('build');
+  const [activeTab, setActiveTab] = useState<'build' | 'color' | 'settings'>('build');
+  const [deviceMode, setDeviceMode] = useState<'pc' | 'mobile'>('pc');
+  const [bgColor, setBgColor] = useState('#18181b');
   const [hasSeenColorWarning, setHasSeenColorWarning] = useState(false);
   const [showColorWarning, setShowColorWarning] = useState(false);
   const [activeHue, setActiveHue] = useState<number | null>(null);
@@ -102,6 +105,38 @@ export default function App() {
   useEffect(() => {
     setHasWarnedMassResize(false);
   }, [selectedObjectIds]);
+
+  useEffect(() => {
+    if (deviceMode !== 'pc') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (selectedObjectIds.length === 0) return;
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, y: obj.y - 1 } : obj));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, y: obj.y + 1 } : obj));
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, x: obj.x - 1 } : obj));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, x: obj.x + 1 } : obj));
+      } else if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault();
+        updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: (obj.rotation + 90) % 360 } : obj));
+      } else if (e.key === 'q' || e.key === 'Q') {
+        e.preventDefault();
+        updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: (obj.rotation - 90 + 360) % 360 } : obj));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deviceMode, selectedObjectIds]);
 
   const updatePlacedObjects = (newObjectsOrUpdater: PlacedObject[] | ((prev: PlacedObject[]) => PlacedObject[]), skipHistory = false) => {
     setPlacedObjects(prev => {
@@ -764,8 +799,18 @@ export default function App() {
       const maxGridX = Math.max(...placedObjects.map(o => o.x + o.w), SVG_SECTION_WIDTH);
       const width = maxGridX * CELL_SIZE;
 
-      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} 360" width="${width}" height="360">\n`;
-      svgContent += `  <g transform="translate(${width / 2}, 180)">\n`;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      placedObjects.forEach(obj => {
+        const svgY = obj.y * CELL_SIZE;
+        const svgBottom = svgY + obj.h * CELL_SIZE;
+        if (svgY < minY) minY = svgY;
+        if (svgBottom > maxY) maxY = svgBottom;
+      });
+      if (minY === Infinity) { minY = 0; maxY = 360; }
+      const actualHeight = maxY - minY;
+
+      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${actualHeight}">\n`;
       
       for (let i = 0; i < placedObjects.length; i++) {
         const obj = placedObjects[i];
@@ -778,14 +823,14 @@ export default function App() {
           ctx?.drawImage(template.imageElement, 0, 0);
           const dataUrl = canvas.toDataURL('image/png');
           
-          const drawX = obj.x * CELL_SIZE - (width / 2);
-          const drawY = obj.y * CELL_SIZE - 500;
+          const drawX = obj.x * CELL_SIZE;
+          const drawY = obj.y * CELL_SIZE - minY;
           const drawW = obj.w * CELL_SIZE;
           const drawH = obj.h * CELL_SIZE;
           
           const centerX = drawX + drawW / 2;
           const centerY = drawY + drawH / 2;
-          svgContent += `    <image href="${dataUrl}" x="${drawX}" y="${drawY}" width="${drawW}" height="${drawH}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
+          svgContent += `  <image href="${dataUrl}" x="${drawX}" y="${drawY}" width="${drawW}" height="${drawH}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
         }
 
         if (i % 50 === 0) {
@@ -794,7 +839,7 @@ export default function App() {
         }
       }
 
-      svgContent += `  </g>\n</svg>`;
+      svgContent += `</svg>`;
 
       const blob = new Blob([svgContent], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
@@ -831,8 +876,18 @@ export default function App() {
 
         const sectionObjects = placedObjects.filter(obj => obj.x < endX && obj.x + obj.w > startX);
         
-        let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360">\n`;
-        svgContent += `  <g transform="translate(240, 180)">\n`;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        sectionObjects.forEach(obj => {
+          const svgY = obj.y * CELL_SIZE;
+          const svgBottom = svgY + obj.h * CELL_SIZE;
+          if (svgY < minY) minY = svgY;
+          if (svgBottom > maxY) maxY = svgBottom;
+        });
+        if (minY === Infinity) { minY = 0; maxY = 360; }
+        const actualHeight = maxY - minY;
+
+        let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${actualHeight}">\n`;
         
         sectionObjects.forEach(obj => {
           const template = templates.find(t => t.id === obj.templateId);
@@ -844,19 +899,19 @@ export default function App() {
             ctx?.drawImage(template.imageElement, 0, 0);
             const dataUrl = canvas.toDataURL('image/png');
             
-            const drawX = (obj.x - startX) * CELL_SIZE - 240;
-            const drawY = obj.y * CELL_SIZE - 500;
+            const drawX = (obj.x - startX) * CELL_SIZE;
+            const drawY = obj.y * CELL_SIZE - minY;
             const drawW = obj.w * CELL_SIZE;
             const drawH = obj.h * CELL_SIZE;
             
             const centerX = drawX + drawW / 2;
             const centerY = drawY + drawH / 2;
             
-            svgContent += `    <image href="${dataUrl}" x="${drawX}" y="${drawY}" width="${drawW}" height="${drawH}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
+            svgContent += `  <image href="${dataUrl}" x="${drawX}" y="${drawY}" width="${drawW}" height="${drawH}" preserveAspectRatio="xMidYMid meet" transform="translate(${centerX}, ${centerY}) rotate(${obj.rotation || 0}) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1}) translate(${-centerX}, ${-centerY})" style="filter: ${getFilterString(obj)};" />\n`;
           }
         });
 
-        svgContent += `  </g>\n</svg>`;
+        svgContent += `</svg>`;
         zip.file(`section_${i + 1}.svg`, svgContent);
         
         setExportProgress(((i + 1) / numSections) * 50);
@@ -963,7 +1018,7 @@ export default function App() {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || e.button === 2) {
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && isPanMode)) {
       e.preventDefault();
       setIsDragging(true);
       if (scrollContainerRef.current) {
@@ -997,6 +1052,40 @@ export default function App() {
     }
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isPanMode || e.touches.length > 1) {
+      setIsDragging(true);
+      if (scrollContainerRef.current) {
+        setDragStart({
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          scrollLeft: scrollContainerRef.current.scrollLeft,
+          scrollTop: scrollContainerRef.current.scrollTop
+        });
+      }
+    } else if (isDragBuildMode && selectedTemplateId && gridRef.current) {
+      setIsBuilding(true);
+      const rect = gridRef.current.getBoundingClientRect();
+      const x = Math.floor((e.touches[0].clientX - rect.left) / CELL_SIZE);
+      const y = Math.floor((e.touches[0].clientY - rect.top) / CELL_SIZE);
+      setLastBuiltPos({ x, y });
+      
+      const template = templates.find(t => t.id === selectedTemplateId);
+      const w = template ? template.defaultW : 1;
+      const h = template ? template.defaultH : 1;
+
+      updatePlacedObjects(prev => [...prev, {
+        id: Math.random().toString(),
+        templateId: selectedTemplateId,
+        x, y, w, h
+      }]);
+
+      if (x >= gridWidth - 5) {
+        setGridWidth(prev => prev + 15);
+      }
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isDragging && scrollContainerRef.current) {
       const dx = e.clientX - dragStart.x;
@@ -1007,6 +1096,38 @@ export default function App() {
       const rect = gridRef.current.getBoundingClientRect();
       const x = Math.floor((e.clientX - rect.left) / CELL_SIZE);
       const y = Math.floor((e.clientY - rect.top) / CELL_SIZE);
+      
+      if (!lastBuiltPos || lastBuiltPos.x !== x || lastBuiltPos.y !== y) {
+        setLastBuiltPos({ x, y });
+        const template = templates.find(t => t.id === selectedTemplateId);
+        const w = template ? template.defaultW : 1;
+        const h = template ? template.defaultH : 1;
+
+        updatePlacedObjects(prev => {
+          return [...prev, {
+            id: Math.random().toString(),
+            templateId: selectedTemplateId,
+            x, y, w, h
+          }];
+        });
+
+        if (x >= gridWidth - 5) {
+          setGridWidth(prev => prev + 15);
+        }
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isDragging && scrollContainerRef.current) {
+      const dx = e.touches[0].clientX - dragStart.x;
+      const dy = e.touches[0].clientY - dragStart.y;
+      scrollContainerRef.current.scrollLeft = dragStart.scrollLeft - dx;
+      scrollContainerRef.current.scrollTop = dragStart.scrollTop - dy;
+    } else if (isBuilding && isDragBuildMode && selectedTemplateId && gridRef.current) {
+      const rect = gridRef.current.getBoundingClientRect();
+      const x = Math.floor((e.touches[0].clientX - rect.left) / CELL_SIZE);
+      const y = Math.floor((e.touches[0].clientY - rect.top) / CELL_SIZE);
       
       if (!lastBuiltPos || lastBuiltPos.x !== x || lastBuiltPos.y !== y) {
         setLastBuiltPos({ x, y });
@@ -1188,6 +1309,12 @@ export default function App() {
             >
               Color
             </button>
+            <button 
+              className={`flex-1 py-3 text-sm font-bold tracking-wider uppercase transition-colors ${activeTab === 'settings' ? 'bg-zinc-800 text-emerald-400 border-b-2 border-emerald-500' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'}`} 
+              onClick={() => setActiveTab('settings')}
+            >
+              Settings
+            </button>
           </div>
 
           {activeTab === 'build' ? (
@@ -1224,6 +1351,14 @@ export default function App() {
                     >
                       <Brush size={24} />
                       <span className="text-[10px] font-medium uppercase text-center leading-tight">Drag<br/>Build</span>
+                    </button>
+                    <button
+                      onClick={() => setIsPanMode(!isPanMode)}
+                      className={`aspect-square rounded-lg border-2 flex flex-col items-center justify-center gap-1 bg-zinc-800 ${isPanMode ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-zinc-400'}`}
+                      title="Pan Mode"
+                    >
+                      <Hand size={24} />
+                      <span className="text-[10px] font-medium uppercase text-center leading-tight">Pan<br/>Mode</span>
                     </button>
                     <button
                       onClick={handleLayerUp}
@@ -1301,7 +1436,7 @@ export default function App() {
                 )}
               </div>
             </>
-          ) : (
+          ) : activeTab === 'color' ? (
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
               <div className="flex flex-col gap-4">
                 <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Hue Adjust</h3>
@@ -1354,10 +1489,55 @@ export default function App() {
                 )}
               </div>
             </div>
-          )}
+          ) : activeTab === 'settings' ? (
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
+              <div className="flex flex-col gap-4">
+                <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Settings</h3>
+                
+                <div className="flex flex-col gap-6 bg-zinc-800/50 p-4 rounded-xl border border-zinc-800">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium text-zinc-200">Device Mode</label>
+                    <div className="flex bg-zinc-900 rounded-lg p-1">
+                      <button
+                        className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${deviceMode === 'pc' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        onClick={() => setDeviceMode('pc')}
+                      >
+                        PC
+                      </button>
+                      <button
+                        className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${deviceMode === 'mobile' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        onClick={() => setDeviceMode('mobile')}
+                      >
+                        Mobile
+                      </button>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      {deviceMode === 'pc' ? 'Use arrow keys to move, Q/E to rotate.' : 'Optimized for touch controls.'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium text-zinc-200">Background Color</label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="color" 
+                        value={bgColor}
+                        onChange={(e) => setBgColor(e.target.value)}
+                        className="w-10 h-10 rounded cursor-pointer bg-transparent border-0 p-0"
+                      />
+                      <span className="text-sm font-mono text-zinc-400 uppercase">{bgColor}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </aside>
 
-        <main className="flex-1 flex flex-col relative order-1 md:order-2 overflow-hidden bg-zinc-950">
+        <main 
+          className="flex-1 flex flex-col relative order-1 md:order-2 overflow-hidden"
+          style={{ backgroundColor: bgColor }}
+        >
           <div 
             className="flex-1 overflow-auto relative p-4 md:p-8" 
             id="grid-scroll-container"
@@ -1366,14 +1546,19 @@ export default function App() {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleMouseUp}
+            onTouchCancel={handleMouseUp}
             onContextMenu={(e) => e.preventDefault()}
           >
             <div
               ref={gridRef}
-              className="relative bg-zinc-900/50 border border-zinc-800"
+              className="relative border border-zinc-800"
               style={{
                 width: gridWidth * CELL_SIZE,
                 height: GRID_HEIGHT * CELL_SIZE,
+                backgroundColor: 'rgba(24, 24, 27, 0.5)', // bg-zinc-900/50 equivalent to keep grid visible
                 backgroundImage: `linear-gradient(to right, #27272a 1px, transparent 1px), linear-gradient(to bottom, #27272a 1px, transparent 1px)`,
                 backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
                 cursor: isDragging ? 'grabbing' : (selectedTemplateId ? 'crosshair' : 'default')
@@ -1525,6 +1710,55 @@ export default function App() {
                   }} className="px-2 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded text-xs">Delete</button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Mobile D-Pad Overlay */}
+          {deviceMode === 'mobile' && selectedObjectIds.length > 0 && (
+            <div className="absolute bottom-6 right-6 flex flex-col items-center gap-2 bg-zinc-900/80 p-4 rounded-2xl backdrop-blur-sm border border-zinc-800 shadow-2xl z-50">
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: (obj.rotation - 90 + 360) % 360 } : obj))} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                >
+                  <RotateCcw size={28} />
+                </button>
+                <button 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, y: obj.y - 1 } : obj))} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                >
+                  <ArrowUp size={28} />
+                </button>
+                <button 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: (obj.rotation + 90) % 360 } : obj))} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                >
+                  <RotateCw size={28} />
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, x: obj.x - 1 } : obj))} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                >
+                  <ArrowLeft size={28} />
+                </button>
+                <div className="w-14 h-14 flex items-center justify-center">
+                  <span className="text-xs font-bold text-zinc-500 uppercase">Move</span>
+                </div>
+                <button 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, x: obj.x + 1 } : obj))} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                >
+                  <ArrowRight size={28} />
+                </button>
+              </div>
+              <button 
+                onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, y: obj.y + 1 } : obj))} 
+                className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+              >
+                <ArrowDown size={28} />
+              </button>
             </div>
           )}
         </main>
