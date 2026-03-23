@@ -1760,7 +1760,7 @@ export default function App() {
             <div className="absolute bottom-6 right-6 flex flex-col items-center gap-2 bg-zinc-900/80 p-4 rounded-2xl backdrop-blur-sm border border-zinc-800 shadow-2xl z-50">
               <div className="flex gap-2">
                 <button 
-                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: (obj.rotation - 90 + 360) % 360 } : obj))} 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: ((obj.rotation || 0) - 90 + 360) % 360 } : obj))} 
                   className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
                 >
                   <RotateCcw size={28} />
@@ -1772,7 +1772,7 @@ export default function App() {
                   <ArrowUp size={28} />
                 </button>
                 <button 
-                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: (obj.rotation + 90) % 360 } : obj))} 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, rotation: ((obj.rotation || 0) + 90) % 360 } : obj))} 
                   className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
                 >
                   <RotateCw size={28} />
@@ -1795,12 +1795,28 @@ export default function App() {
                   <ArrowRight size={28} />
                 </button>
               </div>
-              <button 
-                onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, y: obj.y + 1 } : obj))} 
-                className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
-              >
-                <ArrowDown size={28} />
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleDuplicate} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                  title="Duplicate"
+                >
+                  <CopyPlus size={28} />
+                </button>
+                <button 
+                  onClick={() => updatePlacedObjects(prev => prev.map(obj => selectedObjectIds.includes(obj.id) ? { ...obj, y: obj.y + 1 } : obj))} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-emerald-500/20 active:text-emerald-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                >
+                  <ArrowDown size={28} />
+                </button>
+                <button 
+                  onClick={confirmDelete} 
+                  className="p-4 bg-zinc-800 hover:bg-zinc-700 active:bg-red-500/20 active:text-red-400 rounded-xl text-zinc-300 transition-colors shadow-sm"
+                  title="Delete"
+                >
+                  <Trash2 size={28} />
+                </button>
+              </div>
             </div>
           )}
         </main>
