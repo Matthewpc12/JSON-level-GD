@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Download, Trash2, Plus, Minus, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, X, MousePointer2, FileJson, Image as ImageIcon, RotateCcw, RotateCw, RefreshCw, FlipHorizontal, FlipVertical, FileArchive, CheckSquare, Library, Undo2, Redo2, Brush, Hand, AlertTriangle, ArrowUpToLine, ArrowDownToLine, ChevronUp, ChevronDown } from 'lucide-react';
+import { Upload, Download, Trash2, Plus, Minus, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, X, MousePointer2, FileJson, Image as ImageIcon, RotateCcw, RotateCw, RefreshCw, FlipHorizontal, FlipVertical, FileArchive, CheckSquare, Library, Undo2, Redo2, Brush, Hand, AlertTriangle, ArrowUpToLine, ArrowDownToLine, ChevronUp, ChevronDown, Copy, ClipboardPaste, CopyPlus } from 'lucide-react';
 import JSZip from 'jszip';
 import { createClient } from '@supabase/supabase-js';
 
@@ -68,6 +68,7 @@ export default function App() {
   const [lastBuiltPos, setLastBuiltPos] = useState<{ x: number, y: number } | null>(null);
 
   const [history, setHistory] = useState<PlacedObject[][]>([[]]);
+  const [copiedObjects, setCopiedObjects] = useState<PlacedObject[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const historyRef = useRef<PlacedObject[][]>([[]]);
   const historyIndexRef = useRef<number>(0);
@@ -401,6 +402,38 @@ export default function App() {
       }
       return obj;
     }));
+  };
+
+  const handleCopy = () => {
+    const selected = placedObjects.filter(o => selectedObjectIds.includes(o.id));
+    if (selected.length > 0) {
+      setCopiedObjects(selected);
+    }
+  };
+
+  const handlePaste = () => {
+    if (copiedObjects.length === 0) return;
+    
+    const newObjects = copiedObjects.map(obj => ({
+      ...obj,
+      id: Math.random().toString(),
+    }));
+    
+    updatePlacedObjects(prev => [...prev, ...newObjects]);
+    setSelectedObjectIds(newObjects.map(o => o.id));
+  };
+
+  const handleDuplicate = () => {
+    const selected = placedObjects.filter(o => selectedObjectIds.includes(o.id));
+    if (selected.length === 0) return;
+
+    const newObjects = selected.map(obj => ({
+      ...obj,
+      id: Math.random().toString(),
+    }));
+
+    updatePlacedObjects(prev => [...prev, ...newObjects]);
+    setSelectedObjectIds(newObjects.map(o => o.id));
   };
 
   const handleScale = (dw: number, dh: number) => {
@@ -1607,7 +1640,7 @@ export default function App() {
           </div>
 
           {selectedObjectIds.length > 0 && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-2xl shadow-2xl p-3 flex flex-col gap-3 text-sm z-50">
+            <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-2xl shadow-2xl p-3 flex flex-col gap-3 text-sm z-50 ${deviceMode === 'mobile' ? 'max-w-[80vw] overflow-x-auto scale-[0.85] origin-bottom' : ''}`}>
               {isMultiSelected && (
                 <div className="flex items-center justify-center gap-2 mb-1">
                   <span className="text-xs text-zinc-400">Transform:</span>
@@ -1621,7 +1654,7 @@ export default function App() {
                   >Individual</button>
                 </div>
               )}
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-2 md:gap-4 justify-center">
                 <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
                   <span className="px-2 text-zinc-400 text-xs font-medium">W</span>
                   <button onClick={() => handleScale(-0.5, 0)} className="p-1 hover:bg-zinc-700 rounded"><Minus size={14} /></button>
@@ -1634,25 +1667,34 @@ export default function App() {
                   <span className="w-8 text-center">{isMultiSelected ? '-' : singleSelectedObj?.h}</span>
                   <button onClick={() => handleScale(0, 0.5)} className="p-1 hover:bg-zinc-700 rounded"><Plus size={14} /></button>
                 </div>
-                <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
-                  <button onClick={() => handleRotate(-45)} className="p-1 hover:bg-zinc-700 rounded"><RotateCcw size={14} /></button>
-                  <span className="w-10 text-center text-xs">{isMultiSelected ? '-' : `${singleSelectedObj?.rotation || 0}°`}</span>
-                  <button onClick={() => handleRotate(45)} className="p-1 hover:bg-zinc-700 rounded"><RotateCw size={14} /></button>
-                  <div className="w-px h-4 bg-zinc-700 mx-1"></div>
-                  <button onClick={() => handleFlipX()} className={`p-1 rounded ${!isMultiSelected && singleSelectedObj?.flipX ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-zinc-700'}`}>
-                    <FlipHorizontal size={14} />
-                  </button>
-                  <button onClick={() => handleFlipY()} className={`p-1 rounded ${!isMultiSelected && singleSelectedObj?.flipY ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-zinc-700'}`}>
-                    <FlipVertical size={14} />
-                  </button>
-                </div>
+                {deviceMode === 'pc' && (
+                  <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
+                    <button onClick={() => handleRotate(-45)} className="p-1 hover:bg-zinc-700 rounded"><RotateCcw size={14} /></button>
+                    <span className="w-10 text-center text-xs">{isMultiSelected ? '-' : `${singleSelectedObj?.rotation || 0}°`}</span>
+                    <button onClick={() => handleRotate(45)} className="p-1 hover:bg-zinc-700 rounded"><RotateCw size={14} /></button>
+                    <div className="w-px h-4 bg-zinc-700 mx-1"></div>
+                    <button onClick={() => handleFlipX()} className={`p-1 rounded ${!isMultiSelected && singleSelectedObj?.flipX ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-zinc-700'}`}>
+                      <FlipHorizontal size={14} />
+                    </button>
+                    <button onClick={() => handleFlipY()} className={`p-1 rounded ${!isMultiSelected && singleSelectedObj?.flipY ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-zinc-700'}`}>
+                      <FlipVertical size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {deviceMode === 'pc' && (
+                  <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
+                    <button onClick={() => handleMove(-0.5, 0)} className="p-1 hover:bg-zinc-700 rounded"><ArrowLeft size={14} /></button>
+                    <button onClick={() => handleMove(0.5, 0)} className="p-1 hover:bg-zinc-700 rounded"><ArrowRight size={14} /></button>
+                    <button onClick={() => handleMove(0, -0.5)} className="p-1 hover:bg-zinc-700 rounded"><ArrowUp size={14} /></button>
+                    <button onClick={() => handleMove(0, 0.5)} className="p-1 hover:bg-zinc-700 rounded"><ArrowDown size={14} /></button>
+                  </div>
+                )}
                 <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
-                  <button onClick={() => handleMove(-0.5, 0)} className="p-1 hover:bg-zinc-700 rounded"><ArrowLeft size={14} /></button>
-                  <button onClick={() => handleMove(0.5, 0)} className="p-1 hover:bg-zinc-700 rounded"><ArrowRight size={14} /></button>
-                  <button onClick={() => handleMove(0, -0.5)} className="p-1 hover:bg-zinc-700 rounded"><ArrowUp size={14} /></button>
-                  <button onClick={() => handleMove(0, 0.5)} className="p-1 hover:bg-zinc-700 rounded"><ArrowDown size={14} /></button>
+                  <button onClick={handleCopy} className="p-1 hover:bg-zinc-700 rounded text-zinc-300" title="Copy"><Copy size={16} /></button>
+                  <button onClick={handlePaste} disabled={copiedObjects.length === 0} className="p-1 hover:bg-zinc-700 rounded text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed" title="Paste"><ClipboardPaste size={16} /></button>
+                  <button onClick={handleDuplicate} className="p-1 hover:bg-zinc-700 rounded text-zinc-300" title="Duplicate"><CopyPlus size={16} /></button>
                 </div>
                 <div className="flex items-center gap-1">
                   {!isMultiSelected && singleSelectedObj && (
@@ -1665,7 +1707,7 @@ export default function App() {
                   <button onClick={() => setSelectedObjectIds([])} className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg"><X size={16} /></button>
                 </div>
               </div>
-              {!isMultiSelected && singleSelectedObj && (
+              {deviceMode === 'pc' && !isMultiSelected && singleSelectedObj && (
                 <div className="flex items-center gap-2 mt-1 pt-3 border-t border-zinc-700">
                   <span className="text-xs text-zinc-400 font-medium">Apply to all of this type:</span>
                   <button onClick={() => {
