@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Download, Trash2, Plus, Minus, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, X, MousePointer2, FileJson, Image as ImageIcon, RotateCcw, RotateCw, RefreshCw, FlipHorizontal, FlipVertical, FileArchive, CheckSquare, Library, Undo2, Redo2, Brush, Hand, AlertTriangle, ArrowUpToLine, ArrowDownToLine, ChevronUp, ChevronDown, Copy, ClipboardPaste, CopyPlus } from 'lucide-react';
+import { Upload, Download, Trash2, Plus, Minus, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, X, MousePointer2, FileJson, Image as ImageIcon, RotateCcw, RotateCw, RefreshCw, FlipHorizontal, FlipVertical, FileArchive, CheckSquare, Library, Undo2, Redo2, Brush, Hand, AlertTriangle, ArrowUpToLine, ArrowDownToLine, ChevronUp, ChevronDown, Copy, ClipboardPaste, CopyPlus, Play, Pause, Square, Music } from 'lucide-react';
 import JSZip from 'jszip';
 import { createClient } from '@supabase/supabase-js';
 
@@ -31,6 +31,7 @@ interface PlacedObject {
   hue?: number;
   brightness?: number;
   contrast?: number;
+  usedInGame?: boolean;
 }
 
 const getFilterString = (obj: PlacedObject) => {
@@ -96,6 +97,144 @@ export default function App() {
   const [activeHue, setActiveHue] = useState<number | null>(null);
   const [activeBrightness, setActiveBrightness] = useState<number | null>(null);
   const [activeContrast, setActiveContrast] = useState<number | null>(null);
+
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [previewTime, setPreviewTime] = useState(0);
+  const requestRef = useRef<number>();
+
+  const SPEEDS = {
+    1: 8.372,
+    2: 10.386,
+    3: 12.914,
+    4: 15.6,
+    5: 19.2
+  };
+
+  const speedProfile = React.useMemo(() => {
+    const changes: { x: number, speed: number }[] = [];
+    placedObjects.forEach(obj => {
+      if (obj.usedInGame === false) return;
+      
+      const template = templates.find(t => t.id === obj.templateId);
+      if (template && template.name) {
+        const match = template.name.toLowerCase().match(/speed\s*(\d)/);
+        if (match) {
+          const speedLevel = parseInt(match[1]);
+          if (speedLevel >= 1 && speedLevel <= 5) {
+            changes.push({ x: obj.x, speed: SPEEDS[speedLevel as keyof typeof SPEEDS] });
+          }
+        }
+      }
+    });
+    
+    changes.sort((a, b) => a.x - b.x);
+    
+    const uniqueChanges: { x: number, speed: number }[] = [];
+    let lastX = -Infinity;
+    for (const change of changes) {
+      if (change.x > lastX + 0.001) {
+        uniqueChanges.push(change);
+        lastX = change.x;
+      }
+    }
+    return uniqueChanges;
+  }, [placedObjects, templates]);
+
+  const speedProfileRef = useRef(speedProfile);
+  useEffect(() => {
+    speedProfileRef.current = speedProfile;
+  }, [speedProfile]);
+
+  const getXAtTime = (t: number, speedChanges: { x: number, speed: number }[]) => {
+    let currentX = 0;
+    let currentTime = 0;
+    let currentSpeed = SPEEDS[2];
+    
+    for (const change of speedChanges) {
+      if (change.x <= currentX) {
+        currentSpeed = change.speed;
+        continue;
+      }
+      
+      const distanceToChange = change.x - currentX;
+      const timeToChange = distanceToChange / currentSpeed;
+      
+      if (currentTime + timeToChange >= t) {
+        return currentX + (t - currentTime) * currentSpeed;
+      }
+      
+      currentX = change.x;
+      currentTime += timeToChange;
+      currentSpeed = change.speed;
+    }
+    
+    return currentX + (t - currentTime) * currentSpeed;
+  };
+
+  const updatePreview = React.useCallback(() => {
+    if (audioRef.current && !audioRef.current.paused) {
+      const t = audioRef.current.currentTime;
+      setPreviewTime(t);
+      
+      const x = getXAtTime(t, speedProfileRef.current);
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollLeft = x * CELL_SIZE - scrollContainerRef.current.clientWidth / 2;
+      }
+      
+      requestRef.current = requestAnimationFrame(updatePreview);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isPlaying) {
+      requestRef.current = requestAnimationFrame(updatePreview);
+    } else if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+    }
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, [isPlaying, updatePreview]);
+
+  const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setAudioUrl(url);
+    }
+  };
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+    }
+  };
+
+  const stopPreview = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setPreviewTime(0);
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollLeft = 0;
+      }
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00.00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 100);
+    return `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     setActiveHue(null);
@@ -1314,6 +1453,10 @@ export default function App() {
             <FileArchive size={16} />
             <span className="hidden sm:inline">SVG Zip</span>
           </button>
+          <button onClick={() => setIsPreviewMode(!isPreviewMode)} className={`flex items-center gap-2 px-3 py-2 font-semibold rounded-xl transition-colors text-sm ${isPreviewMode ? 'bg-emerald-500 text-zinc-950' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100'}`}>
+            <Play size={16} />
+            <span className="hidden sm:inline">Preview</span>
+          </button>
           <button onClick={exportLevel} className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-semibold rounded-xl transition-colors text-sm">
             <Download size={16} />
             <span className="hidden sm:inline">PNG Zip</span>
@@ -1606,6 +1749,15 @@ export default function App() {
                 />
               ))}
 
+              {isPreviewMode && (
+                <div 
+                  className="absolute top-0 bottom-0 w-1 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)] z-40 pointer-events-none"
+                  style={{
+                    left: `${getXAtTime(previewTime, speedProfile) * CELL_SIZE}px`,
+                  }}
+                />
+              )}
+
               {placedObjects.map(obj => {
                 const template = templates.find(t => t.id === obj.templateId);
                 const isSelected = selectedObjectIds.includes(obj.id);
@@ -1631,13 +1783,94 @@ export default function App() {
                       height: obj.h * CELL_SIZE,
                       backgroundImage: template ? `url(${template.url})` : 'none',
                       transform: `rotate(${obj.rotation || 0}deg) scale(${obj.flipX ? -1 : 1}, ${obj.flipY ? -1 : 1})`,
-                      filter: getFilterString(obj)
+                      filter: getFilterString(obj),
+                      opacity: obj.usedInGame === false ? 0.5 : 1
                     }}
                   />
                 );
               })}
             </div>
           </div>
+
+          {isPreviewMode && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-2xl shadow-2xl p-4 flex items-center gap-4 z-50">
+              <audio 
+                ref={audioRef} 
+                src={audioUrl || undefined} 
+                onLoadedMetadata={() => {
+                  // Force a re-render to update the duration in the UI
+                  setPreviewTime(0);
+                }}
+                onPlay={() => {
+                  setIsPlaying(true);
+                  requestRef.current = requestAnimationFrame(updatePreview);
+                }}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => {
+                  setIsPlaying(false);
+                  setPreviewTime(0);
+                  if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollLeft = 0;
+                  }
+                }}
+                onTimeUpdate={() => {
+                  if (!isPlaying && audioRef.current) {
+                    setPreviewTime(audioRef.current.currentTime);
+                  }
+                }}
+              />
+              {!audioUrl ? (
+                <label className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 cursor-pointer rounded-lg transition-colors font-medium text-sm">
+                  <Music size={16} />
+                  Upload Song
+                  <input type="file" accept="audio/*" className="hidden" onChange={handleAudioUpload} />
+                </label>
+              ) : (
+                <>
+                  <button onClick={togglePlay} className="p-2 bg-emerald-500 text-zinc-950 rounded-full hover:bg-emerald-600 transition-colors shrink-0">
+                    {isPlaying ? <Pause size={20} /> : <Play size={20} className="ml-0.5" />}
+                  </button>
+                  <button onClick={stopPreview} className="p-2 bg-zinc-700 text-zinc-300 rounded-full hover:bg-zinc-600 transition-colors shrink-0">
+                    <Square size={20} />
+                  </button>
+                  <div className="flex items-center gap-2 mx-2">
+                    <div className="text-sm font-mono text-zinc-300 min-w-[60px] text-right shrink-0">
+                      {formatTime(previewTime)}
+                    </div>
+                    <input 
+                      type="range" 
+                      min={0} 
+                      max={audioRef.current?.duration || 100} 
+                      step={0.01}
+                      value={previewTime}
+                      onChange={(e) => {
+                        const t = parseFloat(e.target.value);
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = t;
+                        }
+                        setPreviewTime(t);
+                        const x = getXAtTime(t, speedProfile);
+                        if (scrollContainerRef.current) {
+                          scrollContainerRef.current.scrollLeft = x * CELL_SIZE - scrollContainerRef.current.clientWidth / 2;
+                        }
+                      }}
+                      className="w-32 md:w-48 accent-emerald-500 cursor-pointer"
+                    />
+                    <div className="text-sm font-mono text-zinc-500 min-w-[60px] shrink-0">
+                      {audioRef.current?.duration ? formatTime(audioRef.current.duration) : '0:00.00'}
+                    </div>
+                  </div>
+                  <button onClick={() => {
+                    setAudioUrl(null);
+                    setPreviewTime(0);
+                    setIsPlaying(false);
+                  }} className="p-2 text-red-400 hover:bg-red-500/20 rounded-full shrink-0 transition-colors">
+                    <Trash2 size={16} />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           {selectedObjectIds.length > 0 && (
             <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-2xl shadow-2xl p-3 flex flex-col gap-3 text-sm z-50 ${deviceMode === 'mobile' ? 'max-w-[80vw] overflow-x-auto scale-[0.85] origin-bottom' : ''}`}>
@@ -1707,49 +1940,64 @@ export default function App() {
                   <button onClick={() => setSelectedObjectIds([])} className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg"><X size={16} /></button>
                 </div>
               </div>
+              {!isMultiSelected && singleSelectedObj && templates.find(t => t.id === singleSelectedObj.templateId)?.name?.toLowerCase().match(/speed\s*(\d)/) && (
+                <div className="flex justify-center mt-1 pt-3 border-t border-zinc-700">
+                  <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
+                    <input 
+                      type="checkbox" 
+                      checked={singleSelectedObj.usedInGame !== false} 
+                      onChange={(e) => updatePlacedObjects(prev => prev.map(o => o.id === singleSelectedObj.id ? { ...o, usedInGame: e.target.checked } : o))}
+                      className="accent-emerald-500 rounded bg-zinc-900 border-zinc-700"
+                    />
+                    Used in game? (affects preview speed)
+                  </label>
+                </div>
+              )}
               {deviceMode === 'pc' && !isMultiSelected && singleSelectedObj && (
-                <div className="flex items-center gap-2 mt-1 pt-3 border-t border-zinc-700">
-                  <span className="text-xs text-zinc-400 font-medium">Apply to all of this type:</span>
-                  <button onClick={() => {
-                    const count = placedObjects.filter(o => o.templateId === singleSelectedObj.templateId).length;
-                    if (count > 1) {
-                      setConfirmModal({
-                        title: 'Mass Resize',
-                        message: `Are you sure you want to resize all ${count} objects of this type?`,
-                        onConfirm: () => updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, w: singleSelectedObj.w, h: singleSelectedObj.h } : o))
-                      });
-                    } else {
-                      updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, w: singleSelectedObj.w, h: singleSelectedObj.h } : o));
-                    }
-                  }} className="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs">Scale</button>
-                  <button onClick={() => {
-                    const count = placedObjects.filter(o => o.templateId === singleSelectedObj.templateId).length;
-                    if (count > 1) {
-                      setConfirmModal({
-                        title: 'Mass Rotate/Flip',
-                        message: `Are you sure you want to rotate/flip all ${count} objects of this type?`,
-                        onConfirm: () => updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, rotation: singleSelectedObj.rotation, flipX: singleSelectedObj.flipX, flipY: singleSelectedObj.flipY } : o))
-                      });
-                    } else {
-                      updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, rotation: singleSelectedObj.rotation, flipX: singleSelectedObj.flipX, flipY: singleSelectedObj.flipY } : o));
-                    }
-                  }} className="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs">Rotate/Flip</button>
-                  <button onClick={() => {
-                    const count = placedObjects.filter(o => o.templateId === singleSelectedObj.templateId).length;
-                    if (count > 1) {
-                      setConfirmModal({
-                        title: 'Mass Delete',
-                        message: `Are you sure you want to delete all ${count} objects of this type?`,
-                        onConfirm: () => {
-                          updatePlacedObjects(prev => prev.filter(o => o.templateId !== singleSelectedObj.templateId));
-                          setSelectedObjectIds([]);
-                        }
-                      });
-                    } else {
-                      updatePlacedObjects(prev => prev.filter(o => o.templateId !== singleSelectedObj.templateId));
-                      setSelectedObjectIds([]);
-                    }
-                  }} className="px-2 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded text-xs">Delete</button>
+                <div className="flex flex-col gap-3 mt-1 pt-3 border-t border-zinc-700">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-400 font-medium">Apply to all of this type:</span>
+                    <button onClick={() => {
+                      const count = placedObjects.filter(o => o.templateId === singleSelectedObj.templateId).length;
+                      if (count > 1) {
+                        setConfirmModal({
+                          title: 'Mass Resize',
+                          message: `Are you sure you want to resize all ${count} objects of this type?`,
+                          onConfirm: () => updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, w: singleSelectedObj.w, h: singleSelectedObj.h } : o))
+                        });
+                      } else {
+                        updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, w: singleSelectedObj.w, h: singleSelectedObj.h } : o));
+                      }
+                    }} className="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs">Scale</button>
+                    <button onClick={() => {
+                      const count = placedObjects.filter(o => o.templateId === singleSelectedObj.templateId).length;
+                      if (count > 1) {
+                        setConfirmModal({
+                          title: 'Mass Rotate/Flip',
+                          message: `Are you sure you want to rotate/flip all ${count} objects of this type?`,
+                          onConfirm: () => updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, rotation: singleSelectedObj.rotation, flipX: singleSelectedObj.flipX, flipY: singleSelectedObj.flipY } : o))
+                        });
+                      } else {
+                        updatePlacedObjects(prev => prev.map(o => o.templateId === singleSelectedObj.templateId ? { ...o, rotation: singleSelectedObj.rotation, flipX: singleSelectedObj.flipX, flipY: singleSelectedObj.flipY } : o));
+                      }
+                    }} className="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs">Rotate/Flip</button>
+                    <button onClick={() => {
+                      const count = placedObjects.filter(o => o.templateId === singleSelectedObj.templateId).length;
+                      if (count > 1) {
+                        setConfirmModal({
+                          title: 'Mass Delete',
+                          message: `Are you sure you want to delete all ${count} objects of this type?`,
+                          onConfirm: () => {
+                            updatePlacedObjects(prev => prev.filter(o => o.templateId !== singleSelectedObj.templateId));
+                            setSelectedObjectIds([]);
+                          }
+                        });
+                      } else {
+                        updatePlacedObjects(prev => prev.filter(o => o.templateId !== singleSelectedObj.templateId));
+                        setSelectedObjectIds([]);
+                      }
+                    }} className="px-2 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded text-xs">Delete</button>
+                  </div>
                 </div>
               )}
             </div>
